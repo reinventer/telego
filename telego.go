@@ -8,7 +8,7 @@ import (
 
 type Bot struct {
 	Api      *tgbotapi.BotAPI
-	handlers map[string]func(string, tgbotapi.Update)
+	handlers map[string]func(string, tgbotapi.Update) string
 }
 
 func NewBot(token string) (*Bot, error) {
@@ -16,25 +16,33 @@ func NewBot(token string) (*Bot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Bot{Api: api}, nil
+	return &Bot{Api: api, handlers: map[string]func(string, tgbotapi.Update) string{}}, nil
 }
 
-func (b *Bot) AddHandler(command string, handler func(string, tgbotapi.Update)) {
+func (b *Bot) AddHandler(command string, handler func(string, tgbotapi.Update) string) {
 	b.handlers[command] = handler
 }
 
 func (b *Bot) Run() {
 	ucfg := tgbotapi.NewUpdate(0)
 	ucfg.Timeout = 60
-	err := b.Api.UpdatesChan(ucfg)
-	// читаем обновления из канала
+	b.Api.UpdatesChan(ucfg)
 	for {
 		select {
 		case update := <-b.Api.Updates:
-			text := strings.SplitN(update.Message.Text, ' ', 2)
+			text := strings.SplitN(update.Message.Text, " ", 2)
 			handler, ok := b.handlers[text[0]]
 			if ok {
-				handler(text[1], update)
+				params := ""
+				if len(text) > 1 {
+					params = text[1]
+				}
+				msg_text := handler(params, update)
+				if msg_text != "" {
+					chat_id := update.Message.Chat.ID
+					msg := tgbotapi.NewMessage(chat_id, msg_text)
+					b.Api.SendMessage(msg)
+				}
 			}
 		}
 	}
