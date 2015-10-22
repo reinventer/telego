@@ -8,7 +8,12 @@ import (
 
 type Bot struct {
 	Api      *tgbotapi.BotAPI
-	handlers map[string]func(string, tgbotapi.Update) string
+	handlers map[string]func(*Update) string
+}
+
+type Update struct {
+	tgbotapi.Update
+	Params string
 }
 
 func NewBot(token string) (*Bot, error) {
@@ -16,10 +21,10 @@ func NewBot(token string) (*Bot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Bot{Api: api, handlers: map[string]func(string, tgbotapi.Update) string{}}, nil
+	return &Bot{Api: api, handlers: map[string]func(*Update) string{}}, nil
 }
 
-func (b *Bot) AddHandler(command string, handler func(string, tgbotapi.Update) string) {
+func (b *Bot) AddHandler(command string, handler func(*Update) string) {
 	b.handlers[command] = handler
 }
 
@@ -29,17 +34,21 @@ func (b *Bot) Run() {
 	b.Api.UpdatesChan(ucfg)
 	for {
 		select {
-		case update := <-b.Api.Updates:
-			text := strings.SplitN(update.Message.Text, " ", 2)
+		case tupdate := <-b.Api.Updates:
+			text := strings.SplitN(tupdate.Message.Text, " ", 2)
 			handler, ok := b.handlers[text[0]]
 			if ok {
 				params := ""
 				if len(text) > 1 {
 					params = text[1]
 				}
-				msg_text := handler(params, update)
+				update := Update{
+					Update: tupdate,
+					Params: params,
+				}
+				msg_text := handler(&update)
 				if msg_text != "" {
-					chat_id := update.Message.Chat.ID
+					chat_id := tupdate.Message.Chat.ID
 					msg := tgbotapi.NewMessage(chat_id, msg_text)
 					b.Api.SendMessage(msg)
 				}
