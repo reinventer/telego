@@ -8,9 +8,12 @@ import (
 )
 
 type Bot struct {
-	Api             *tgbotapi.BotAPI
-	handlers        map[string]func(*Update) []string
-	default_handler func(*Update) []string
+	sync.RWMutex
+	Api                   *tgbotapi.BotAPI
+	handlers              map[string]func(*Update) []string
+	default_handler       func(*Update) []string
+	handlers_descriptions map[string]string
+	handlers_order        []string
 }
 
 type Update struct {
@@ -25,17 +28,37 @@ func NewBot(token string) (*Bot, error) {
 		return nil, err
 	}
 	bot := Bot{
-		Api:      api,
-		handlers: map[string]func(*Update) []string{},
+		Api:                   api,
+		handlers:              map[string]func(*Update) []string{},
+		handlers_descriptions: map[string]string{},
+		handlers_order:        []string{},
 	}
 	return &bot, nil
 }
 
-func (b *Bot) AddHandler(command string, handler func(*Update) []string) {
+func (b *Bot) SetHandler(command string, handler func(*Update) []string) {
+	b.Lock()
 	b.handlers[command] = handler
+	b.Unlock()
 }
 
-func (b *Bot) DefaultHandler(handler func(*Update) []string) {
+func (b *Bot) SetHandlerWithHelp(command string, description string, handler func(*Update) []string) {
+	b.Lock()
+	b.handlers[command] = handler
+	b.handlers_descriptions[command] = description
+	for i, cmd := range b.handlers_order {
+		if cmd == command {
+			b.handlers_order = append(b.handlers_order[:i], b.handlers_order[i+1:]...)
+			break
+		}
+	}
+	b.handlers_order = append(b.handlers_order, command)
+	b.handlers["/help"] = b.defaultHelpHandler
+	b.handlers["/start"] = b.defaultHelpHandler
+	b.Unlock()
+}
+
+func (b *Bot) SetDefaultHandler(handler func(*Update) []string) {
 	b.default_handler = handler
 }
 
@@ -57,6 +80,16 @@ func (b *Bot) RunWorkers(workers_count int) {
 
 func (b *Bot) Run() {
 	b.RunWorkers(1)
+}
+
+func (b *Bot) defaultHelpHandler(*Update) []string {
+	help_message := ""
+	b.RLock()
+	for _, cmd := range b.handlers_order {
+		help_message += cmd + " - " + b.handlers_descriptions[cmd] + "\n"
+	}
+	b.RUnlock()
+	return []string{help_message}
 }
 
 func (b *Bot) newUpdate(tupdate tgbotapi.Update, params string) *Update {
