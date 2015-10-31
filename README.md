@@ -30,19 +30,18 @@ func main() {
 	b.Run()
 }
 
-func TestHandler(update *telego.Update) []string {
-	return []string{
-		"It's a test message, " + update.Message.From.UserName,
-		"Parameter: '" + update.Params + "'",
-	}
+func TestHandler(update *telego.Update) {
+	update.Reply("It's a test message, " + update.Message.From.UserName)
+	update.Reply("Parameter: '" + update.Params + "'")
 }
 
-func DefaultHandler(update *telego.Update) []string {
-	return []string{"Unknown comand", "Try to use /help"}
+func DefaultHandler(update *telego.Update) {
+	update.Reply("Unknown command")
+	update.Reply("Try to use /help")
 }
 ```
 
-Compile and run it.
+Compile and run it (don't forget to replace token).
 
 Now talk with your bot, try commands `/test`, `/test params`, `/help`
 

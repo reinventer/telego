@@ -7,19 +7,15 @@ import (
 	"github.com/Syfaro/telegram-bot-api"
 )
 
+type HandlerFunc func(*Update)
+
 type Bot struct {
 	sync.RWMutex
 	Api                   *tgbotapi.BotAPI
-	handlers              map[string]func(*Update) []string
-	default_handler       func(*Update) []string
+	handlers              map[string]HandlerFunc
+	default_handler       HandlerFunc
 	handlers_descriptions map[string]string
 	handlers_order        []string
-}
-
-type Update struct {
-	tgbotapi.Update
-	Bot    *tgbotapi.BotAPI
-	Params string
 }
 
 func NewBot(token string) (*Bot, error) {
@@ -29,20 +25,20 @@ func NewBot(token string) (*Bot, error) {
 	}
 	bot := Bot{
 		Api:                   api,
-		handlers:              map[string]func(*Update) []string{},
+		handlers:              map[string]HandlerFunc{},
 		handlers_descriptions: map[string]string{},
 		handlers_order:        []string{},
 	}
 	return &bot, nil
 }
 
-func (b *Bot) SetHandler(command string, handler func(*Update) []string) {
+func (b *Bot) SetHandler(command string, handler HandlerFunc) {
 	b.Lock()
 	b.handlers[command] = handler
 	b.Unlock()
 }
 
-func (b *Bot) SetHandlerWithHelp(command string, description string, handler func(*Update) []string) {
+func (b *Bot) SetHandlerWithHelp(command string, description string, handler HandlerFunc) {
 	b.Lock()
 	b.handlers[command] = handler
 	b.handlers_descriptions[command] = description
@@ -58,7 +54,7 @@ func (b *Bot) SetHandlerWithHelp(command string, description string, handler fun
 	b.Unlock()
 }
 
-func (b *Bot) SetDefaultHandler(handler func(*Update) []string) {
+func (b *Bot) SetDefaultHandler(handler HandlerFunc) {
 	b.default_handler = handler
 }
 
@@ -82,22 +78,28 @@ func (b *Bot) Run() {
 	b.RunWorkers(1)
 }
 
-func (b *Bot) defaultHelpHandler(*Update) []string {
+func (b *Bot) defaultHelpHandler(update *Update) {
 	help_message := ""
 	b.RLock()
 	for _, cmd := range b.handlers_order {
 		help_message += cmd + " - " + b.handlers_descriptions[cmd] + "\n"
 	}
 	b.RUnlock()
-	return []string{help_message}
+	update.Reply(help_message)
 }
 
 func (b *Bot) newUpdate(tupdate tgbotapi.Update, params string) *Update {
 	return &Update{
 		Update: tupdate,
-		Bot:    b.Api,
+		Bot:    b,
 		Params: params,
 	}
+}
+
+func (b *Bot) SendTextMessage(chat_id int, text string) error {
+	msg := tgbotapi.NewMessage(chat_id, text)
+	_, err := b.Api.SendMessage(msg)
+	return err
 }
 
 func (b *Bot) worker(updates <-chan tgbotapi.Update, wg *sync.WaitGroup) {
@@ -113,21 +115,10 @@ func (b *Bot) worker(updates <-chan tgbotapi.Update, wg *sync.WaitGroup) {
 					params = text[1]
 				}
 
-				b.execHandler(handler, b.newUpdate(tupdate, params))
+				handler(b.newUpdate(tupdate, params))
 			} else if b.default_handler != nil {
-				b.execHandler(b.default_handler, b.newUpdate(tupdate, ""))
+				b.default_handler(b.newUpdate(tupdate, ""))
 			}
-		}
-	}
-}
-
-func (b *Bot) execHandler(handler func(*Update) []string, update *Update) {
-	texts := handler(update)
-	for _, msg_text := range texts {
-		if msg_text != "" {
-			chat_id := update.Message.Chat.ID
-			msg := tgbotapi.NewMessage(chat_id, msg_text)
-			b.Api.SendMessage(msg)
 		}
 	}
 }
