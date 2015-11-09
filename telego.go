@@ -59,9 +59,7 @@ func (b *Bot) SetDefaultHandler(handler HandlerFunc) {
 }
 
 func (b *Bot) RunWorkers(workers_count int) {
-	ucfg := tgbotapi.NewUpdate(0)
-	ucfg.Timeout = 60
-	b.Api.UpdatesChan(ucfg)
+	b.initUpdates()
 	if workers_count < 1 {
 		workers_count = 1
 	}
@@ -75,7 +73,10 @@ func (b *Bot) RunWorkers(workers_count int) {
 }
 
 func (b *Bot) Run() {
-	b.RunWorkers(1)
+	b.initUpdates()
+	for tupdate := range b.Api.Updates {
+		go b.findAndExecHandler(tupdate)
+	}
 }
 
 func (b *Bot) defaultHelpHandler(update *Update) {
@@ -102,23 +103,33 @@ func (b *Bot) SendTextMessage(chat_id int, text string) error {
 	return err
 }
 
+func (b *Bot) initUpdates() {
+	ucfg := tgbotapi.NewUpdate(0)
+	ucfg.Timeout = 60
+	b.Api.UpdatesChan(ucfg)
+}
+
 func (b *Bot) worker(updates <-chan tgbotapi.Update, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		select {
 		case tupdate := <-updates:
-			text := strings.SplitN(tupdate.Message.Text, " ", 2)
-			handler, ok := b.handlers[text[0]]
-			if ok {
-				params := ""
-				if len(text) > 1 {
-					params = text[1]
-				}
-
-				handler(b.newUpdate(tupdate, params))
-			} else if b.default_handler != nil {
-				b.default_handler(b.newUpdate(tupdate, ""))
-			}
+			b.findAndExecHandler(tupdate)
 		}
+	}
+}
+
+func (b *Bot) findAndExecHandler(tupdate tgbotapi.Update) {
+	text := strings.SplitN(tupdate.Message.Text, " ", 2)
+	handler, ok := b.handlers[text[0]]
+	if ok {
+		params := ""
+		if len(text) > 1 {
+			params = text[1]
+		}
+
+		handler(b.newUpdate(tupdate, params))
+	} else if b.default_handler != nil {
+		b.default_handler(b.newUpdate(tupdate, ""))
 	}
 }
