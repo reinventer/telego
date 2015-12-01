@@ -58,25 +58,16 @@ func (b *Bot) SetDefaultHandler(handler HandlerFunc) {
 	b.default_handler = handler
 }
 
-func (b *Bot) RunWorkers(workers_count int) {
-	b.initUpdates()
-	if workers_count < 1 {
-		workers_count = 1
+func (b *Bot) Run() error {
+	updates, err := b.getUpdatesChan()
+	if err != nil {
+		return err
 	}
-	var wg sync.WaitGroup
-	wg.Add(workers_count)
-	for i := 0; i < workers_count; i++ {
-		wg.Add(1)
-		go b.worker(b.Api.Updates, &wg)
-	}
-	wg.Wait()
-}
 
-func (b *Bot) Run() {
-	b.initUpdates()
-	for tupdate := range b.Api.Updates {
+	for tupdate := range updates {
 		go b.findAndExecHandler(tupdate)
 	}
+	return nil
 }
 
 func (b *Bot) defaultHelpHandler(update *Update) {
@@ -99,24 +90,14 @@ func (b *Bot) newUpdate(tupdate tgbotapi.Update, params string) *Update {
 
 func (b *Bot) SendTextMessage(chat_id int, text string) error {
 	msg := tgbotapi.NewMessage(chat_id, text)
-	_, err := b.Api.SendMessage(msg)
+	_, err := b.Api.Send(msg)
 	return err
 }
 
-func (b *Bot) initUpdates() {
+func (b *Bot) getUpdatesChan() (<-chan tgbotapi.Update, error) {
 	ucfg := tgbotapi.NewUpdate(0)
 	ucfg.Timeout = 60
-	b.Api.UpdatesChan(ucfg)
-}
-
-func (b *Bot) worker(updates <-chan tgbotapi.Update, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		select {
-		case tupdate := <-updates:
-			b.findAndExecHandler(tupdate)
-		}
-	}
+	return b.Api.GetUpdatesChan(ucfg)
 }
 
 func (b *Bot) findAndExecHandler(tupdate tgbotapi.Update) {
